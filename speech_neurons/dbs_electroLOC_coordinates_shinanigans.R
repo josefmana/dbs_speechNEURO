@@ -119,7 +119,7 @@ for ( i in names(d0) ) {
 # and will trim the table to only those electrodes that do exist in the data set later
 # also for now, this code is specific to the problem at hand (i.e., 'speech neurons')
 df <- expand.grid( c("x","y","z"), # space axes
-                   c( paste0("m_",0:3), paste0("s_",1:4), paste0("s_",c(1,"2a","2b","2c","3a","3b","3c",4)) ), # contact ids
+                   c( paste0("m_",0:3), paste0("s_",1:4), paste0("s_",c("2a","2b","2c","3a","3b","3c")) ), # contact ids
                    c("left","right"), # hemisphere
                    c("native","scrf","mni"), # space
                    c("mac","pacer","win"), # type of pre-processing
@@ -169,3 +169,6 @@ for ( i in names(d0) ) {
 
 # in df keep only electrodes that exist (get rid of all dummy rows)
 df <- df[ complete.cases(df$coords_mm), ]
+
+# save df as csv
+write.table( df , "data/dbs_electroLOC_speech_neurons_coords.csv", sep = ",", row.names = F )
