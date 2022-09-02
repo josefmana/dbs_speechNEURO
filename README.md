@@ -1,2 +1,2 @@
 # dbs_electroLOC
-All things about electrodes localisations in PD STN-DBS I'm working on in First Faculty of Medicine, Charles University, Prague
+Electrodes localisations for "speech neurons" project in PD STN-DBS as a part of CLIMABI project at First Faculty of Medicine, Charles University, Prague
