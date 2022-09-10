@@ -158,8 +158,8 @@ for ( i in names(d0) ) {
 # in df keep only electrodes that exist (get rid of all dummy rows)
 df <- df[ complete.cases(df$coords_mm), ]
 
-# create a folder for tables if it doesn't already exist
-if( !dir.exists("tables") ) dir.create( "tables" )
+# create a folder for coordinates' data if it doesn't already exist
+if( !dir.exists("data") ) dir.create( "data" )
 
 # save df as csv
-write.table( df , "tables/dbs_speech_neurons_lead_coords.csv", sep = ",", row.names = F )
+write.table( df , "data/dbs_speech_neurons_lead_coords.csv", sep = ",", row.names = F )
