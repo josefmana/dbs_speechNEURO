@@ -15,17 +15,13 @@ for ( i in pkgs ) {
 # set working directory (works in RStudio only)
 setwd( dirname(rstudioapi::getSourceEditorContext()$path) )
 
-# write down coordinates of the target, the entry AC, PC a MS
-coords <- data.frame( target = c(10.91, -39.91, -18.38), entry = c(39.66, -77.13, 57.35),
-                      ac = c(-0.97, -53.21, -12.13), pc = c(-1.04, -29.51, -13.87), ms = c(-0.39, -24.40, 55.94),
-                      row.names = c("x","y","z")
-                      )
+# read coordinates of the target, the entry AC, PC a MS
+coords <- read.csv( "data/dbs_speechNEURO_protocols.csv", sep = "," ) %>% # coordinates in MRI space
+  # calculate vectors showing midcommisural point (MC) as well as AC-to-PC and AC-to-MS lines
+  mutate( mc = (ac + pc) / 2, acpc = pc-ac, acms = ms-ac, pcms = ms-pc )
 
-# calculate vectors showing midcommisural point (MC) as well as AC-to-PC and AC-to-MS lines
-coords <- coords %>% mutate( mc = (ac + pc) / 2, acpc = pc-ac, acms = ms-ac, pcms = ms-pc )
-
-# list values to be computed
-dists <- data.frame( prot = c(23.76, 11.96, 10.07, 5.15), comp = NA, row.names = c("acpc","lat_left","ant","inf") )
+# read values of sitances to be computed and compared
+dists <- read.csv( "data/dbs_speechNEURO_distances.csv", sep = "," )
 
 
 # ---- validate that changing bases by shifting saggital plane to ACPCMS plane reproduces values from the protocol ----
@@ -42,18 +38,18 @@ dist_val <- function( N = NA, p = NA, t = NA ) {
     
 }
 
-# compute the distances
+# compute all the distances
 dists <- dists %>%
   # fill-in the comp column
   mutate(
-    # calculate them one-by-one like a good boy
-    comp = with( coords, c( sqrt(acpc %*% acpc), # ACPC line
-                            dist_val( N = cross( acpc, acms ), p = ac, t = target ), # lateral displacement
-                            dist_val( N = acpc, p = pc, t = target), # anterior displacement
-                            dist_val( N = cross( cross( acpc, acms ), acpc), p = pc, t = target ) # inferior displacement
-                            ) ),
+    # check the dist colmn to know what to compute
+    comp = case_when(
+      dist == "acpc" ~ sapply( id, function(i) with( coords[coords$id == i, ], sqrt(acpc %*% acpc) ) ), # ACPC distance
+      dist %in% c("left","right") ~ sapply( id, function(i) with( coords[coords$id == i, ], dist_val( N = cross( acpc, acms ), p = mc, t = target ) ) ), # lateral displacement
+      dist %in% c("ant","post") ~ sapply( id, function(i) with( coords[coords$id == i, ], dist_val( N = acpc, p = mc, t = target ) ) ), # anterior/posterior displacement
+      dist %in% c("inf","sup") ~ sapply( id, function(i) with( coords[coords$id == i, ], dist_val( N = cross( acpc, cross( acpc, acms ) ), p = mc, t = target ) ) ) # inferior/superior displacement
+    ),
     # add difference of protocol-minus-computed for a good measure
     diff = prot-comp
   )
-
 
