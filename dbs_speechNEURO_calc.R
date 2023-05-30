@@ -94,19 +94,16 @@ shift <- with( angs, lapply(
 # prepare a function for computing transformation matrix from Leksell to DICOM space
 l2d_trans <- function( i = NA, L = leks, D = dic ) {
   
-  # prepare a 9x9 matrix derived from AC, PC and MS points in Leksell space
-  `T` <-  with( L, matrix( c( ac[ id == i ], rep(0,6), rep(0,3), ac[ id == i ], rep(0,3), rep(0,6), ac[ id == i ],
-                              pc[ id == i ], rep(0,6), rep(0,3), pc[ id == i ], rep(0,3), rep(0,6), pc[ id == i ],
-                              ms[ id == i ], rep(0,6), rep(0,3), ms[ id == i ], rep(0,3), rep(0,6), ms[ id == i ]
-                              ),
-                           nrow = 9, byrow = T )
-                )
+  # Leksell space coordinates of AC, PC, MS and target (Source)
+  s <- with( L, cbind( rbind( ac[ id == i ], pc[ id == i ], ms[ id == i ], target[ id == i ] ) ) )
   
   # extract DICOM coordinates for AC, PC and MS points
-  d <- ( D[ D$id == i, c("ac","pc","ms") ] %>% unlist() )
+  d <- t( D[ D$id == i, c("ac","pc","ms",'target') ] )
   
   # compute the transformation matrix
-  A <- solve( `T`, d ) %>% matrix( nrow = 3, byrow = T )
+  # use homogeneous coordinates and solve
+  # s * tx = d
+  A <- t( solve( cbind(s,1) , cbind(d,1) ) )
   return(A)
   
 }
@@ -114,12 +111,18 @@ l2d_trans <- function( i = NA, L = leks, D = dic ) {
 # compute transformation matrixes for each patient
 trans <- lapply( setNames(angs$id, angs$id), function(i) l2d_trans( i = i, L = leks, D = dic ) )
 
-# check the correspondence with DICOM space
+# check the correspondence with DICOM space by comparing entry DICOM coordinates with entry transformed Leksell coordinates
 sapply( angs$id, function(i) {
-  t <- c( trans[[i]] %*% c( t( angs[ angs$id == i, c("Lx","Ly","Lz") ] ) ) ) # target in DICOM coordinates according to the transformation
-  d <- t - dic[ dic$id == i, "target" ] # target in DICOM coordinates according to the protocol
-  return( sqrt( d %*% d ) ) # return a distance between estimated target DICOM coordinates and protocol target DICOM coordinates
-} )
+  t <- c( trans[[i]] %*% c( leks[ leks$id == i, "entry" ], 1 ) )[-4] # entry in DICOM coordinates according to the transformation
+  d <- t - dic[ dic$id == i, "entry" ] # target in DICOM coordinates according to the protocol
+  return( sqrt( d %*% d ) ) # return a distance between estimated entry DICOM coordinates and protocol target DICOM coordinates
+} ) %>% round(2)
+
+# transform shifted coordinates from Leksell to DICOM space
+shift[ , c("Dx","Dy","Dz") ] <- sapply( 1:nrow(shift), function(i) c( trans[[ shift[i,"id"] ]] %*% c( t( shift[ i, c("Ax","Ay","Az") ] ), 1 ) )[-4] ) %>% t()
+
+# save the outcomes
+write.table( shift, "tabs/dbs_speechNEURO_dicom_traj.csv", sep = ",", row.names = F, quote = F )
 
 
 # ---- validate that changing bases by shifting sagital plane to ACPCMS plane reproduces values from the protocol ----
