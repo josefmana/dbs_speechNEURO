@@ -48,7 +48,9 @@ rot <- function( alpha = NA, beta = NA, v = c(0,0,1) ) {
   
   # prepare rotation matrices
   Rx <- matrix( c( 1, 0, 0, 0, cos(beta), -sin(beta), 0, sin(beta), cos(beta) ), nrow = 3, byrow = T ) # rotation along x-axis
-  Ry <- matrix( c( cos(alpha), 0, sin(alpha), 0, 1, 0, -sin(alpha), 0, cos(alpha) ), nrow = 3, byrow = T ) # rotation along y-axis
+  Ry <- matrix( c( cos(-alpha), 0, sin(-alpha), 0, 1, 0, -sin(-alpha), 0, cos(-alpha) ), nrow = 3, byrow = T ) # rotation along y-axis
+                                                                                                       # sign reversing the angle because
+                                                                                                       # DICOM is LPS, Leksell is LAI
   
   # rotate 
   t <- c(Ry %*% c(Rx %*% v) )
@@ -62,12 +64,13 @@ v0 <- lapply( seq(0,10,1), # loop through 0 to 10 mm vertically with 1 mm steps
                 # first prepare all combinations of x and y coordinates shifted by between-contact-space sp
                 # then keep only those that are orthogonal in the xy plane
                 # finally, for each combination of x and y add z spanning 0 to 10 mm spaced by 1 mm
-                expand.grid( Ux = c(0,sp,-sp), Uy = c(0,sp,-sp) ) %>% filter( ( abs(Ux) + abs(Uy) ) < 2 ) %>% add_column( Uz = i )
+                # Z is negative because Leksell space is coded in LAI
+                expand.grid( Ux = c(0,sp,-sp), Uy = c(0,sp,-sp) ) %>% filter( ( abs(Ux) + abs(Uy) ) < 2 ) %>% add_column( Uz = -i )
               ) %>%
   # pull all vectors to a single file
   do.call( rbind.data.frame, . ) %>%
-  # label the contacts (c = central, a = anterior, p = posterio, l = left, r = right)
-  mutate( cont = paste0( case_when( (Ux == 0 & Uy == 0) ~ "c", Ux == 1 ~ "l", Ux == -1 ~ "r", Uy == -1 ~ "a", Uy == 1 ~ "p" ), Uz ), .before = 1 )
+  # label the contacts (c = central, a = anterior, p = posterior, l = left, r = right)
+  mutate( cont = paste0( case_when( (Ux == 0 & Uy == 0) ~ "c", Ux == 1 ~ "l", Ux == -1 ~ "r", Uy == -1 ~ "p", Uy == 1 ~ "a" ), -Uz ), .before = 1 )
 
 # prepare a data frame for shifting coordinates of each patient
 shift <- with( angs, lapply(
