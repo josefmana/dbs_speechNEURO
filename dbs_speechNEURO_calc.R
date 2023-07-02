@@ -28,11 +28,11 @@ for ( i in c("dic","leks") ) assign(
     mutate( mc = (ac + pc) / 2, acpc = pc-ac, acms = ms-ac, pcms = ms-pc )
 )
 
-# read values of ditances to be computed and compared and angles to be used for contact location estimation
+# read values of distances to be computed and compared and angles to be used for contact location estimation
 dists <- read.csv( "data/dbs_speechNEURO_distances.csv", sep = "," )
 angs <- read.csv( "data/dbs_speechNEURO_angles.csv", sep = "," )
 
-# space between contacts in millimeters
+# space between contacts in the gun (in millimeters)
 sp = 1
 
 
@@ -59,11 +59,11 @@ rot <- function( alpha = NA, beta = NA, v = c(0,0,1) ) {
 }
 
 # prepare vectors that are to be rotated
-v0 <- lapply( seq(0,10,1), # loop through 0 to 10 mm vertically with 1 mm steps
+v0 <- lapply( seq(-3,6,.5), # loop through -3 to 6 mm vertically with 0.5 mm steps
               function(i)
                 # first prepare all combinations of x and y coordinates shifted by between-contact-space sp
                 # then keep only those that are orthogonal in the xy plane
-                # finally, for each combination of x and y add z spanning 0 to 10 mm spaced by 1 mm
+                # finally, for each combination of x and y add z spanning -3 to +6 mm spaced by 0.5 mm
                 # Z is negative because Leksell space is coded in LAI
                 expand.grid( Ux = c(0,sp,-sp), Uy = c(0,sp,-sp) ) %>% filter( ( abs(Ux) + abs(Uy) ) < 2 ) %>% add_column( Uz = -i )
               ) %>%
