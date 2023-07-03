@@ -153,7 +153,7 @@ df <- do.call( rbind.data.frame, df ) %>% `rownames<-`( 1:nrow(.) )
 for ( i in 1:nrow(df) ) df$elmodel[i] <- with( df, d.traj[[id[i]]]$props[ hemisphere[i], "elmodel" ] )
 
 # save df as csv
-write.table( df , "data/dbs_speech_neurons_lead_coords.csv", sep = ",", row.names = F )
+write.table( df , "tabs/dbs_speechNEURO_lead_coords.csv", sep = ",", row.names = F )
 
 
 # ---- session info ----
