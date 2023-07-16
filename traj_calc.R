@@ -1,11 +1,8 @@
-# This is a script for extracting microelectrodes trajectories from surgery protocols in DBS operation (in the Leksell ram space) and
-# then transforming to patients T1 MRI space
+# This is a script for calculating exploratory microelectrodes trajectories from surgery protocols in DBS operation (in the Leksell ram
+# space) and then transforming to patients native T1 MRI space
 
 # list packages to be used
-pkgs <- c("rstudioapi", # setting working directory via RStudio API
-          "dplyr", "tidyverse", # data wrangling
-          "pracma" # cross product calculation
-          )
+pkgs <- c("rstudioapi", "dplyr", "tidyverse", "pracma" ) # pracma for cross product calculation
 
 # load or install each of the packages as needed
 for ( i in pkgs ) {
@@ -16,23 +13,26 @@ for ( i in pkgs ) {
 # set working directory (works in RStudio only)
 setwd( dirname(rstudioapi::getSourceEditorContext()$path) )
 
-# create folders for figures, tables and session info
+# where do the data live?
+d.dir <- "_nogithub/prots/sums"
+
+# create folders for outcomes and session info
 # prints TRUE and creates the folder if it was not present, prints NULL if the folder was already present.
-sapply( c("figs", "tabs", "sess"), function(i) if( !dir.exists(i) ) dir.create(i) )
+sapply( c( "sess", "_nogithub", "_nogithub/coords" ), function(i) if( !dir.exists(i) ) dir.create(i) )
 
 # read coordinates of the target, the entry AC, PC a MS
 for ( i in c("dic","leks") ) assign(
   # read DICOM and Leksell coordinates separately
-  i, read.csv( paste0( "data/dbs_speechNEURO_", i, ifelse( i == "dic", "om", "ell" ), ".csv" ) ) %>%
+  i, read.csv( paste0( d.dir, "/", i, ".csv" ) ) %>%
     # calculate vectors showing midcommisural point (MC) as well as AC-to-PC and AC-to-MS lines
     mutate( mc = (ac + pc) / 2, acpc = pc-ac, acms = ms-ac, pcms = ms-pc )
 )
 
 # read values of distances to be computed and compared and angles to be used for contact location estimation
-dists <- read.csv( "data/dbs_speechNEURO_distances.csv", sep = "," )
-angs <- read.csv( "data/dbs_speechNEURO_angles.csv", sep = "," )
+dists <- read.csv( paste0( d.dir, "/dists.csv" ), sep = "," )
+angs <- read.csv( paste0( d.dir, "/angs.csv" ), sep = "," )
 
-# space between contacts in the gun (in millimeters)
+# space between electrodes in the gun (in millimeters)
 sp = 1
 
 
@@ -124,8 +124,11 @@ sapply( angs$id, function(i) {
 # transform shifted coordinates from Leksell to DICOM space
 shift[ , c("Dx","Dy","Dz") ] <- sapply( 1:nrow(shift), function(i) c( trans[[ shift[i,"id"] ]] %*% c( t( shift[ i, c("Ax","Ay","Az") ] ), 1 ) )[-4] ) %>% t()
 
-# save the outcomes
-write.table( shift, "tabs/dbs_speechNEURO_dicom_traj.csv", sep = ",", row.names = F, quote = F )
+# because the real DICOM (as read by Slicer) has flipped x and y axes with respect to protocols, flip them now
+shift[ , c("Dx","Dy") ] <- -shift[ , c("Dx","Dy") ]
+
+# save the outcomes as "inferred coordinates"
+write.table( shift, "_nogithub/coords/coord_infs.csv", sep = ",", row.names = F, quote = F )
 
 
 # ---- validate that changing bases by shifting sagital plane to ACPCMS plane reproduces values from the protocol ----
