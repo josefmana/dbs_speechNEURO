@@ -1,8 +1,14 @@
 # This is a script for calculating exploratory microelectrodes trajectories from surgery protocols in DBS operation (in the Leksell ram
-# space) and then transforming to patients native T1 MRI space
+# space) and then transforming to patients' raw native T1 MRI space ("raw_anat_t1.nii") and Lead-DBS native T1 space ("anat_t1.nii")
+
+
+######################################################################################################
+# ---- THIS SCRIPT IS SUPPOSED TO BE RUN ONLY AFTER MRI WAS COREGISTERED/NORMALISED IN LEAD-DBS ---- #
+######################################################################################################
+
 
 # list packages to be used
-pkgs <- c("rstudioapi", "dplyr", "tidyverse", "pracma" ) # pracma for cross product calculation
+pkgs <- c("rstudioapi", "dplyr", "tidyverse", "pracma", "rmatio", "RNifti" ) # pracma is for cross product calculation
 
 # load or install each of the packages as needed
 for ( i in pkgs ) {
@@ -14,13 +20,14 @@ for ( i in pkgs ) {
 setwd( dirname(rstudioapi::getSourceEditorContext()$path) )
 
 # where do the data live?
-d.dir <- "_nogithub/prots/sums"
+d.dir <- "_nogithub/prots/sums" # summaries
+d.mri <- "_nogithub/mri/lead" # MRIs processed in Lead-DBS
 
 # create folders for outcomes and session info
 # prints TRUE and creates the folder if it was not present, prints NULL if the folder was already present.
 sapply( c( "sess", "_nogithub", "_nogithub/coords" ), function(i) if( !dir.exists(i) ) dir.create(i) )
 
-# read coordinates of the target, the entry AC, PC a MS
+# read coordinates of target, entry, AC, PC a MS
 for ( i in c("dic","leks") ) assign(
   # read DICOM and Leksell coordinates separately
   i, read.csv( paste0( d.dir, "/", i, ".csv" ) ) %>%
@@ -29,11 +36,13 @@ for ( i in c("dic","leks") ) assign(
 )
 
 # read values of distances to be computed and compared and angles to be used for contact location estimation
+# as well as algorithms used for normalisation vi Lead-DBS
 dists <- read.csv( paste0( d.dir, "/dists.csv" ), sep = "," )
 angs <- read.csv( paste0( d.dir, "/angs.csv" ), sep = "," )
+algs <- read.csv( paste0( d.mri, "/norms.csv"), sep = "," )
 
 # space between electrodes in the gun (in millimeters)
-sp = 1
+sp = 2
 
 
 # ---- rotate in Leksell space ----
@@ -53,24 +62,26 @@ rot <- function( alpha = NA, beta = NA, v = c(0,0,1) ) {
                                                                                                        # DICOM is LPS, Leksell is LAI
   
   # rotate 
-  t <- c(Ry %*% c(Rx %*% v) )
+  # ---- SHOULDN'T IT BE 1) ALPHA (Ry) THEN BETA (Rx)? ----
+  t <- c(Rx %*% c(Ry %*% v) )
   return(t)
+  # ---- CHECK BEFORE WRECK ----
   
 }
 
 # prepare vectors that are to be rotated
-v0 <- lapply( seq(-3,6,.5), # loop through -3 to 6 mm vertically with 0.5 mm steps
+v0 <- lapply( seq(3,-6,-.5), # loop through -3 to 6 mm vertically with 0.5 mm steps
               function(i)
                 # first prepare all combinations of x and y coordinates shifted by between-contact-space sp
                 # then keep only those that are orthogonal in the xy plane
                 # finally, for each combination of x and y add z spanning -3 to +6 mm spaced by 0.5 mm
                 # Z is negative because Leksell space is coded in LAI
-                expand.grid( Ux = c(0,sp,-sp), Uy = c(0,sp,-sp) ) %>% filter( ( abs(Ux) + abs(Uy) ) < 2 ) %>% add_column( Uz = -i )
+                expand.grid( Ux = c(0,sp,-sp), Uy = c(0,sp,-sp) ) %>% filter( ( abs(Ux) + abs(Uy) ) < 2*sp ) %>% add_column( Uz = i )
               ) %>%
   # pull all vectors to a single file
   do.call( rbind.data.frame, . ) %>%
   # label the contacts (c = central, a = anterior, p = posterior, l = left, r = right)
-  mutate( cont = paste0( case_when( (Ux == 0 & Uy == 0) ~ "c", Ux == 1 ~ "l", Ux == -1 ~ "r", Uy == -1 ~ "p", Uy == 1 ~ "a" ), -Uz ), .before = 1 )
+  mutate( cont = paste0( case_when( (Ux == 0 & Uy == 0) ~ "c", Ux == sp ~ "l", Ux == -sp ~ "r", Uy == -sp ~ "p", Uy == sp ~ "a" ), Uz ), .before = 1 )
 
 # prepare a data frame for shifting coordinates of each patient
 shift <- with( angs, lapply(
@@ -90,6 +101,14 @@ shift <- with( angs, lapply(
   ) %>% do.call( rbind.data.frame, . )
 # add patient identificator
 ) %>% mutate( id = sub( "\\..*", "", rownames(.) ), .before = 1 )
+
+# re-label left/right electrodes to lateral/medial
+for ( i in unique(shift$id) ) {
+  # for patients with left-sided electrode left -> lateral and right -> medial
+  if ( !( i %in% with( angs, id[ side == "right" ] ) ) ) shift[ shift$id == i, "cont" ] <- shift[ shift$id == i, "cont" ] %>% sub( "r", "m", . )
+  # for patients with right-sided electrode left -> medial and right -> lateral
+  else shift[ shift$id == i, "cont" ] <- shift[ shift$id == i, "cont" ] %>% sub( "l", "m", . ) %>% sub( "r", "l", . )
+}
 
 
 # --- mapping from Leksell to DICOM space ----
@@ -111,7 +130,7 @@ l2d_trans <- function( i = NA, L = leks, D = dic ) {
   
 }
 
-# compute transformation matrixes for each patient
+# compute transformation matrices for each patient
 trans <- lapply( setNames(angs$id, angs$id), function(i) l2d_trans( i = i, L = leks, D = dic ) )
 
 # check the correspondence with DICOM space by comparing entry DICOM coordinates with entry transformed Leksell coordinates
@@ -127,8 +146,44 @@ shift[ , c("Dx","Dy","Dz") ] <- sapply( 1:nrow(shift), function(i) c( trans[[ sh
 # because the real DICOM (as read by Slicer) has flipped x and y axes with respect to protocols, flip them now
 shift[ , c("Dx","Dy") ] <- -shift[ , c("Dx","Dy") ]
 
+
+# ---- mapping from raw_anat_t1 to anat_t1 space ----
+
+# add "anat_t1.nii" coordinates via transformation matrix in Lead MRI folders
+shift[ , c("Nx","Ny","Nz") ] <- sapply( 1:nrow(shift), function(i) {
+  
+  # start by extracting ids of patients with MRIs processed and raw dicom coordinates from the row
+  pats <- list.files( d.mri, recursive = F )
+  x <- c( t( shift[ i , c("Dx","Dy","Dz") ] ) , 1 )
+  
+  # if the row belongs to a patient without MRI processed, fill with NAs
+  if ( !( shift$id[i] %in% pats ) ) return( rep(NA,3) )
+  
+  # otherwise transform raw_anat_t1 to anat_t1 coordinates
+  else {
+    
+    # extract transformation matrix and compute the transformation
+    t <- solve( read.mat( paste( d.mri, shift$id[i], "ea_precoregtransformation.mat", sep = "/" ) )$tmat )
+    x <- t %*% x
+    
+    # return the result
+    return( x[-4] )
+    
+  }
+  
+} ) %>% t()
+
+# loop through patients and add a column with algorithm used for normalisation (to be used in further steps in Matlab)
+for ( i in unique(shift$id) ) shift[ shift$id == i, "norm_algo" ] <- with( algs, algo[ id == i ] )
+
 # save the outcomes as "inferred coordinates"
-write.table( shift, "_nogithub/coords/coord_infs.csv", sep = ",", row.names = F, quote = F )
+write.table(
+  
+  # keep only raw_anat_t1 and anat_t1 coordinates and rename columns
+  shift[ , grepl("id|cont|D|N|algo", names(shift) ) ] %>% `colnames<-`( c( "id", "cont", paste0("raw_",c("x","y","z")), paste0( "nat_",c("x","y","z")), "norm_algo" ) ),
+  "_nogithub/coords/coord_infs.csv", sep = ",", row.names = F, quote = F
+  
+)
 
 
 # ---- validate that changing bases by shifting sagital plane to ACPCMS plane reproduces values from the protocol ----
@@ -164,4 +219,4 @@ dists <- dists %>%
 # ---- session info ----
 
 # write the sessionInfo() into a .txt file
-capture.output( sessionInfo(), file = "sess/dbs_speechNEURO_calc.txt" )
+capture.output( sessionInfo(), file = "sess/trajcalc.txt" )
