@@ -8,7 +8,7 @@
 
 %% initiate the script
 % read the table with estimated coordinates in native space
-d = readtable( '_nogithub/coords/coord_infs.csv' );
+d = readtable( '_nogithub/coords/coords_expl.csv' );
 nrow = height(d); % extract the number of rows
 d( :, {'mni_x','mni_y','mni_z'} ) = array2table( zeros(nrow, 3) ); % prepare new columns
 
@@ -23,7 +23,7 @@ for i = 1:nrow
     n = char( strcat( dir, '/anat_t1.nii' ) ); % native space
 
     % skip missing contacts or non-ANTs transformations (for now)
-    if sum( isnan(c) ) > 0 || d.norm_algo(i) == "FSL_FLIRT"
+    if sum( isnan(c) ) > 0 || d.norm_algo(i) == "FSL_FNIRT"
         d( i, {'mni_x','mni_y','mni_z'} ) = array2table( [ NaN NaN NaN ] );
     else
         c_vox = ea_mm2vox( c , n ); % mapping from mm to voxels in native space

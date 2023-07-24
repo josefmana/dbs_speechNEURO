@@ -181,7 +181,7 @@ write.table(
   
   # keep only raw_anat_t1 and anat_t1 coordinates and rename columns
   shift[ , grepl("id|cont|D|N|algo", names(shift) ) ] %>% `colnames<-`( c( "id", "cont", paste0("raw_",c("x","y","z")), paste0( "nat_",c("x","y","z")), "norm_algo" ) ),
-  "_nogithub/coords/coord_infs.csv", sep = ",", row.names = F, quote = F
+  "_nogithub/coords/coords_expl.csv", sep = ",", row.names = F, quote = F
   
 )
 
