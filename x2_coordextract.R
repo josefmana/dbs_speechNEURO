@@ -1,9 +1,9 @@
 # This little one will extract electrode coordinates as localized via Lead-DBS and print the result into a neat csv file.
 
 
-######################################################################################################
-# ---- THIS SCRIPT IS SUPPOSED TO BE RUN ONLY AFTER MRI WAS COREGISTERED/NORMALISED IN LEAD-DBS ---- #
-######################################################################################################
+################################################################################################
+# ---- THIS SCRIPT IS SUPPOSED TO BE RUN ONLY AFTER ELECTRODES WERE LOCALISED IN LEAD-DBS ---- #
+################################################################################################
 
 
 # list packages to be used
@@ -38,7 +38,12 @@ for ( i in id ) file.copy( from = paste( d.mri, i, "ea_reconstruction.mat", sep 
                            to = paste0( d.rec, "/", i, ".mat" ) )
 
 # next read the MatLab files
-recon <- lapply( setNames(id,id) , function(i) tryCatch( readMat( paste0( d.rec, "/", i, ".mat" ) )$reco, error = function(e) print( paste0(i, " reconstruction missing") ) ) )
+recon <- lapply( setNames(id,id),
+                 function(i)
+                   tryCatch( readMat( paste0( d.rec, "/", i, ".mat" ) )$reco,
+                             error = function(e) print( paste0(i, " reconstruction missing") )
+                             )
+                 )
 
 # deal with patients tha have only one electrode localised
 for ( i in "IPN243" ) {
