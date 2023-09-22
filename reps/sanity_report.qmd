@@ -1,0 +1,296 @@
+---
+title: "STN Speech Neurons (sanity check)"
+author: "Josef Mana"
+date: "`r Sys.Date()`"
+warning: false
+title-block-banner: true
+number-sections: true
+toc: true
+format:
+  html: 
+    code-fold: true
+    df-print: paged
+---
+
+In this report, I compare estimates of contact locations as extracted from:
+
+1) (pre-/peri-)surgery protocols ('check' data set),
+2) (post-)surgery imaging via Lead-DBS ('perm' data set).
+
+To this end I estimated coordinates (in native and MNI spaces) of the most distal and proximal contacts of the permanent electrode (I don't use the other contacts to evade shinanigans with directional St. Jude leads).
+
+## Procedures for contact coordinates estimation
+
+Using the pre- and peri-surgery protocols, I used the following procedure (resulting into the 'check' data set):
+
+1) co-register and normalise pre-surgery MR images (T1w used for planning as well as postop. CT) via Lead-DBS,
+2) locate sites that were targeted by the permanent electrodes (from peri-surgery protocols),
+3) extract midpoint of the most distal and proximal contacts of the target for permanent electrode (0.75 mm superior of distal edge of the contact along the lead),
+4) rotate each point by arc and ring angles in Leksell space,
+5) transform Leksell space coordinates to 'raw' DICOM space (i.e., the space as represented by raw DICOM files) via transformation derived from pre-surgery protocol,
+6) transform 'raw' space coordinates to 'native' space coordinates via transformation used by Lead-DBS for prepocessing of the MR images,
+7) transform 'native' space coordinates to MNI coordinates via Lead-DBS-derived non-linear normalisation transform.
+
+
+Using Lead-DBS I used the following procedure (resulting into the 'perm' data set):
+
+1) co-register and normalise pre-surgery MR and CT images via Lead-DBS (identical to step one above),
+2) pre-locate electrode artifact using PaCER or TRAC/CORE algorithm,
+3) manually wiggle localisation result where needed,
+4) extract coordinates from the "ea_reconstruction.mat" file.
+
+These resulted into two data sets estimating the same contact locations as inferred by pre- and peri-surgery planning (the 'check' data set) and as inferred by post-surgery CT artifact via Lead-DBS (the 'perm' data set).
+
+
+## Data set
+
+This is how the raw data look like (with id = patient's REDCap id, cont = contact (distal vs proximal), side = hemisphere, ctqual = quality of CT scan, space = native vs MNI, axis = left-right (x) vs anterior-posterior (y) vs top-bottom (z), source = check (using the first procedure above) vs perm (using the second procedure above), estimate = estimated coordinates in mm):
+
+```{r}
+#| label: pre-process
+
+# list packages to be used
+pkgs <- c("here","dplyr", "tidyverse" )
+
+# load or install each of the packages as needed
+for ( i in pkgs ) {
+  if ( i %in% rownames( installed.packages() ) == F ) install.packages(i) # install if it ain't installed yet
+  if ( i %in% names( sessionInfo()$otherPkgs ) == F ) library( i , character.only = T ) # load if it ain't loaded yet
+}
+
+# where the data is?
+indir <- here( "_nogithub", "coords" ) # directory containing inputs
+
+# read the data
+for ( i in c("perm","check") ) assign( paste0( "d.", i ), read.csv( paste0( indir, "/coords_", i, ".csv" ), sep = "," ) )
+
+
+# ---- in-house functions ---
+
+# angle between two vectors
+ang <- function( x, y ) {
+  
+  dp <- x %*% y # dot (inner) product
+  nx <- sqrt( x %*% x ) # norm of vector x
+  ny <- sqrt( y %*% y ) # norm of vector y
+  
+  theta <- acos( dp / (nx * ny ) ) # final angle in radians
+  return( as.numeric( ( theta / pi ) * 180 ) ) # return the results in degrees
+}
+
+
+# ---- pre-processing ----
+
+# prepare a common data set for angles as well as distances calculatio
+d0 <- d.perm %>%
+  
+  # keep only native and MNI coordinates
+  filter( space != "scrf" ) %>%
+  
+  # reformat some variables so the files mix well
+  mutate(
+    source = "perm", # label the source of estimation ('perm' for permanent electrode)
+    side = case_when( hemisphere == "left" ~ "sin", hemisphere == "right" ~ "dex" ), # re-code according to d.targ
+    space = ifelse( space == "native", "nat", space ), # re-code according to d.targ
+    # keep only the most proximal and distal contacts (the others won't work for St. Jude)
+    cont = case_when(
+      contact == 1 ~ "dist",
+      contact == 4 * ifelse( elmodel == "Medtronic 3389", 1, 2 ) ~ "prox"
+    )
+  ) %>%
+  
+  # keep only variables of interest and rows with data
+  select( id, side, cont, source, x, y, z, space ) %>%
+  filter( complete.cases(cont) ) %>%
+  
+  # re-format to a format ready to joining d.targ
+  pivot_wider(
+    id_cols = c("id","cont","side","source"),
+    values_from = c("x","y","z"),
+    names_from = space,
+    names_glue = "{space}_{.value}"
+  ) %>%
+  
+  # add d.targ and get rid of raw coordinates (which are not part of Lead-DBS output)
+  full_join( d.check %>% mutate( source = "check", .after = side ) ) %>%
+  mutate( ctqual = factor( ifelse( id %in% paste0( "IPN", c(243,244,248,256) ), "low", "ok" ), levels = c("ok","low"), ordered = T ) ) %>% # label low-qualty CT subjects
+  select( -norm_algo, -contains("raw") ) %>%
+  
+  # put 'perm' and 'check' data next to each other to locate irrelevant rows (side not evaluated)
+  pivot_wider(
+    names_from = source,
+    values_from = contains("_"),
+    id_cols = c("id","cont","side","ctqual")
+  ) %>%
+  
+  # keep only cases (sides) used for the experiment
+  filter( complete.cases(nat_x_check) ) %>%
+  
+  # prepare unique rows for patient/space/source combinations
+  pivot_longer(
+    cols = contains("_"),
+    names_to = c("space","axis","source"),
+    names_pattern = "(.*)_(.*)_(.*)",
+    values_to = "estimate"
+  )
+
+# calculate Eucledian distance between 'perm' and 'check' estimates
+d1 <- d0  %>%
+  
+  # return coordinates to their own distinct columns
+  pivot_wider(
+    names_from = c("source","axis"),
+    values_from = "estimate",
+    id_cols = c("id","cont","side","space","ctqual")
+  ) %>%
+  
+  # calculate the distances
+  mutate(
+    x_diff = perm_x - check_x,
+    y_diff = perm_y - check_y,
+    z_diff = perm_z - check_z,
+    dist_mm = sqrt( x_diff^2 + y_diff^2 + z_diff^2 )
+  )
+
+# calculate angles w.r.t. YZ plane (alpha) and XZ plane (beta)
+d2 <- d0 %>%
+  
+  # return coordinates to their own distinct columns
+  pivot_wider(
+    names_from = c("cont","axis"),
+    values_from = "estimate",
+    id_cols = c("id","side","space","source","ctqual")
+  ) %>%
+  
+  # calculate the angles
+  mutate(
+    x = - prox_x + dist_x,
+    y = - prox_y + dist_y,
+    z = - prox_z + dist_z,
+    alpha = sapply( 1:nrow(.), function(i) 90-ang( c(x[i],y[i],z[i]), c(1,0,0) ) ),
+    beta = sapply( 1:nrow(.), function(i) 90-ang( c(x[i],y[i],z[i]), c(0,-1,0) ) )
+  ) %>%
+  
+  # put the angles side-to-side
+  pivot_wider(
+    names_from = "source",
+    values_from = c("alpha","beta"),
+    id_cols = c("id","side","space","ctqual")
+  ) %>%
+  
+  # compute angle differences
+  mutate(
+    alpha_diff = alpha_perm - alpha_check,
+    beta_diff = beta_perm - beta_check
+  )
+
+# show the data
+d0
+```
+
+## Distances distributions
+
+To summarise distances between estimates of the identical contacts in the 'check' data vs the 'perm' data using this re-wranggled data (arranged from the largest difference at top to the smallest at bottom) for data (separately for native and MNI space):
+
+```{r}
+#| label: dist-tab
+#| tbl-cap: Data of distances between 'check' vs 'perm' estimates (in mm)
+#| tbl-subcap:
+#|  - "native space"
+#|  - "MNI space"
+
+# prepare a table with summaries
+t1 <- array( data = NA, dim = c(2,2,5),
+             dimnames = list( c("nat","mni"), c("prox","dist"), c("mean","median","sd","min","max") )
+             )
+
+# fill-in
+for( i in dimnames(t1)[[1]] ) {
+  
+  t1[ i , , ] <- sapply(
+    # loop through all statistics of interest
+    colnames(t1[i,,]),
+    function(c)
+      
+      sapply(
+        # loop through all contacts included
+        rownames(t1[i,,]),
+        function(r)
+          do.call( c, list( with( d1, dist_mm[ space == i & cont == r] ) ) ) %>% round(2) %>% sprintf( "%.2f", . )
+
+      ) 
+  )
+
+}
+
+# show the data
+arrange( d1[ d1$space == "nat", c("id","cont","side","ctqual","x_diff","y_diff","z_diff","dist_mm") ], by = desc(dist_mm ) )
+arrange( d1[ d1$space == "mni", c("id","cont","side","ctqual","x_diff","y_diff","z_diff","dist_mm") ], by = desc(dist_mm ) )
+```
+
+@fig-dist shows distribution of these distances as well as association between proximal and distal distances conditional on space (native space in the left column, MNI space in the right column). @fig-dist-5 and @fig-dist-6 show that distances in estimates of proximal and distal contacts are similar within participant (i.e., points lying close to an 'identity' line, i.e., a line with zero intercept and slope of one on the mm of distance scale). Also, the lower-quality CT cases did not seem to result in a larger distance between estimates.
+
+```{r}
+#| label: fig-dist
+#| fig-cap: "Euclidean distance between 'check' and 'perm' data for estimates of identical contacts"
+#| fig-subcap:
+#|   - "Distribution of distal contact differences in native space"
+#|   - "Distribution of distal contact differences in MNI space"
+#|   - "Distribution of proximal contact differences in native space"
+#|   - "Distribution of proximal contact differences in MNI space"
+#|   - "Association between proximal and distal contact differences in native space"
+#|   - "Association between proximal and distal contact differences in MNI space"
+#| layout-ncol: 2
+#| layout-nrow: 3
+
+par( cex = 1.8, mar = c(4,4,1,1)+.1 )
+
+# plot histograms
+for( i in c("dist","prox") ) for ( j in c("nat","mni") ) {
+    
+    h <- with( d1, hist( dist_mm[ cont == i & space == j ] , # plot the bars
+                         xlab = "Distance (mm)", main = NULL, # wiggle labels
+                         col = "lightblue", ylim = c(0,6) # stylise it
+                         )
+               )
+    # add number of observations per bar
+    with( h, text( mids, counts, labels = counts, adj = c(0.5,-0.5) ) )
+    
+}
+
+# correlations
+for ( i in c("nat","mni") ) {
+    
+    with( d1, plot( dist_mm[ space == i & cont == "prox" ], xlab = "Difference (proximal contact, mm)", # abscissa
+                    dist_mm[ space == i & cont == "dist" ], ylab = "Distance (distal contact, mm)", # ordinate
+                    col = ctqual[ space == i & cont == "prox" ], # colors
+                    pch = 19, cex = 1.2 # stylising
+                    )
+          )
+    # add legend for the colors
+    with( d1, legend( "topleft",
+                      legend = levels( ctqual ),
+                      col = factor( levels(ctqual), levels = c("ok","low"), ordered = T ),
+                      pch = 19, cex = 1, title = "CT quality:"
+                      )
+          )
+    # show a line implying such a distribution
+    abline( a = 0, b = 1, lty = 3, lwd = 2.5 )
+    
+}
+```
+
+
+## Distances summary
+
+In the native space, we observe a mean distance of `r t1["nat","dist","mean"]` mm between estimated position of distal contacts (SD = `r t1["nat","dist","sd"]`, Md = `r t1["nat","dist","median"]`, Min = `r t1["nat","dist","min"]`, Max = `r t1["nat","dist","max"]`), and mean distance of `r t1["nat","prox","mean"]` mm between estimated position of proximal contacts (SD = `r t1["nat","prox","sd"]`, Md = `r t1["nat","prox","median"]`, Min = `r t1["nat","prox","min"]`, Max = `r t1["nat","prox","max"]`).
+
+In the MNI space, we observe a mean distance of `r t1["mni","dist","mean"]` mm between estimated position of distal contacts (SD = `r t1["mni","dist","sd"]`, Md = `r t1["mni","dist","median"]`, Min = `r t1["mni","dist","min"]`, Max = `r t1["mni","dist","max"]`), and mean distance of `r t1["mni","prox","mean"]` mm between estimated position of proximal contacts (SD = `r t1["mni","prox","sd"]`, Md = `r t1["mni","prox","median"]`, Min = `r t1["mni","prox","min"]`, Max = `r t1["mni","prox","max"]`).
+
+
+## Session info {.unnumbered}
+
+```{r}
+sessionInfo()
+```
+

@@ -282,7 +282,7 @@ d.targ[ , c("Nx","Ny","Nz") ] <- sapply( 1:nrow(d.targ), function(i) {
   else {
     
     # extract transformation matrix and compute the transformation
-    t <- solve( read.mat( paste( mrdir, shift$id[i], "ea_precoregtransformation.mat", sep = "/" ) )$tmat )
+    t <- solve( read.mat( paste( mrdir, d.targ$id[i], "ea_precoregtransformation.mat", sep = "/" ) )$tmat )
     x <- t %*% x
     
     # return the result
