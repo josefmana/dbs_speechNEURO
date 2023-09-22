@@ -149,4 +149,3 @@ d2 <- d0 %>%
     alpha_diff = alpha_perm - alpha_check,
     beta_diff = beta_perm - beta_check
   )
-  

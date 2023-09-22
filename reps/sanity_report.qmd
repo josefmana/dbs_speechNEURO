@@ -50,7 +50,7 @@ This is how the raw data look like (with id = patient's REDCap id, cont = contac
 #| label: pre-process
 
 # list packages to be used
-pkgs <- c("here","dplyr", "tidyverse" )
+pkgs <- c( "here", "dplyr", "tidyverse" )
 
 # load or install each of the packages as needed
 for ( i in pkgs ) {
