@@ -1,5 +1,5 @@
 # This is a script that run the following sanity checks:
-# 1) compare contact coordinates inferred from surgery protocols vs coordinates reconstructed via Lead-DBS
+# 1) directly compare contact coordinates inferred from surgery protocols vs coordinates reconstructed via Lead-DBS
 
 
 ###################################################################################################
@@ -149,3 +149,4 @@ d2 <- d0 %>%
     alpha_diff = alpha_perm - alpha_check,
     beta_diff = beta_perm - beta_check
   )
+

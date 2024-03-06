@@ -7,7 +7,8 @@ title-block-banner: true
 number-sections: true
 toc: true
 format:
-  html: 
+  html:
+    self-contained: true
     code-fold: true
     df-print: paged
 ---
